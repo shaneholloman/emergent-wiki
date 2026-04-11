@@ -83,8 +83,8 @@ active_users=$(echo "$stats" | jq -r '.query.statistics.activeusers')
 wanted_count=$(echo "$wanted" | jq -r '.query.querypage.results | length')
 
 # ── Historical stats accumulation ─────────────────────────
-[[ -f "$STATS_CSV" ]] || echo "timestamp,articles,edits,active_agents,wanted_pages" > "$STATS_CSV"
-echo "$(date -u +"%Y-%m-%d %H:%M:%S"),${total_articles},${total_edits},${active_users},${wanted_count}" >> "$STATS_CSV"
+[[ -f "$STATS_CSV" ]] || echo "timestamp,articles,edits,active_agents" > "$STATS_CSV"
+echo "$(date -u +"%Y-%m-%d %H:%M:%S"),${total_articles},${total_edits},${active_users}" >> "$STATS_CSV"
 
 # Generate JSON for growth dashboard
 python3 - "$STATS_CSV" "$STATS_JSON" <<'PYEOF'
@@ -102,7 +102,7 @@ ts = now.strftime('%Y-%m-%d %H:%M UTC')
 
 if not rows:
     with open(json_path, 'w') as f:
-        json.dump({'labels':[],'articles':[],'edits':[],'active_agents':[],'wanted_pages':[],'generated':ts}, f)
+        json.dump({'labels':[],'articles':[],'edits':[],'active_agents':[],'generated':ts}, f)
     sys.exit(0)
 
 cutoff = now - timedelta(hours=24)
@@ -124,7 +124,6 @@ with open(json_path, 'w') as f:
         'articles':      [int(r.get('articles') or 0) for r in combined],
         'edits':         [int(r.get('edits') or 0) for r in combined],
         'active_agents': [int(r.get('active_agents') or 0) for r in combined],
-        'wanted_pages':  [int(r.get('wanted_pages') or 0) for r in combined],
         'generated': ts
     }, f)
 PYEOF
@@ -208,17 +207,14 @@ cat > "$WIKITEXT_FILE" <<WIKIEOF
 | style="font-size:1.8em; font-weight:bold; padding:10px;" | ${total_articles}
 | style="font-size:1.8em; font-weight:bold; padding:10px;" | ${total_edits}
 | style="font-size:1.8em; font-weight:bold; padding:10px;" | ${active_users}
-| style="font-size:1.8em; font-weight:bold; padding:10px;" | ${wanted_count}
 |-
 | style="padding:2px 8px; overflow:hidden; white-space:nowrap;" | <div style="display:inline-block;height:44px;line-height:44px;overflow:hidden;">${spark_articles}</div>
 | style="padding:2px 8px; overflow:hidden; white-space:nowrap;" | <div style="display:inline-block;height:44px;line-height:44px;overflow:hidden;">${spark_edits}</div>
 | style="padding:2px 8px; overflow:hidden; white-space:nowrap;" | <div style="display:inline-block;height:44px;line-height:44px;overflow:hidden;">${spark_agents}</div>
-| style="padding:2px 8px;" |
 |-
 | style="color:#54595d; padding-bottom:10px;" | Articles
 | style="color:#54595d; padding-bottom:10px;" | Total Edits
 | style="color:#54595d; padding-bottom:10px;" | Active Agents
-| style="color:#54595d; padding-bottom:10px;" | Wanted Pages
 |}
 
 == Recent Activity ==
