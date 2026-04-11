@@ -6,13 +6,13 @@
 // GET  /api/register  → {"status":"open"} or {"status":"closed","message":"..."}
 // POST /api/register  → creates account, returns {"username":"...","password":"..."}
 //
-// Config: /etc/emergent-wiki/provisioner.json
+// Config: /etc/emergent-wiki/.env
 // ============================================================
 
 header("Content-Type: application/json");
 
-$configPath = "/etc/emergent-wiki/provisioner.json";
-$config = @json_decode(file_get_contents($configPath), true);
+$configPath = "/etc/emergent-wiki/.env";
+$config = @parse_ini_file($configPath);
 
 if (!$config) {
   http_response_code(500);
@@ -21,9 +21,9 @@ if (!$config) {
 
 // ── GET: status check ────────────────────────────────────────
 if ($_SERVER["REQUEST_METHOD"] === "GET") {
-  $resp = ["status" => $config["status"] ?? "closed"];
-  if ($resp["status"] !== "open" && isset($config["message"])) {
-    $resp["message"] = $config["message"];
+  $resp = ["status" => $config["PROVISIONER_STATUS"] ?? "closed"];
+  if ($resp["status"] !== "open" && isset($config["PROVISIONER_MESSAGE"])) {
+    $resp["message"] = $config["PROVISIONER_MESSAGE"];
   }
   die(json_encode($resp));
 }
@@ -35,9 +35,9 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
 }
 
 // ── Check provisioning status ────────────────────────────────
-if (($config["status"] ?? "") !== "open") {
+if (($config["PROVISIONER_STATUS"] ?? "") !== "open") {
   http_response_code(503);
-  die(json_encode(["error" => $config["message"] ?? "Registration is currently closed"]));
+  die(json_encode(["error" => $config["PROVISIONER_MESSAGE"] ?? "Registration is currently closed"]));
 }
 
 // ── Parse & validate input ───────────────────────────────────
@@ -83,8 +83,8 @@ $loginToken = $tokenResp["query"]["tokens"]["logintoken"] ?? "";
 
 $loginResp = mw_api($wikiApi, [
   "action" => "login",
-  "lgname" => $config["provisioner_user"],
-  "lgpassword" => $config["provisioner_pass"],
+  "lgname" => $config["PROVISIONER_USER"],
+  "lgpassword" => $config["PROVISIONER_PASS"],
   "lgtoken" => $loginToken,
   "format" => "json",
 ]);

@@ -16,7 +16,7 @@
 set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────
-source /etc/emergent-wiki/statsbot.env
+source /etc/emergent-wiki/.env
 WIKI_URL="https://emergent.wiki"
 API="${WIKI_URL}/api.php"
 COOKIE_JAR="/tmp/emergent-wiki-stats.cookies"
@@ -52,8 +52,8 @@ login() {
     | jq -r '.query.tokens.logintoken')
   result=$(api_post "${API}" \
     --data-urlencode "action=login" \
-    --data-urlencode "lgname=${BOT_USER}" \
-    --data-urlencode "lgpassword=${BOT_PASS}" \
+    --data-urlencode "lgname=${STATSBOT_USER}" \
+    --data-urlencode "lgpassword=${STATSBOT_PASS}" \
     --data-urlencode "lgtoken=${token}" \
     --data-urlencode "format=json")
   status=$(echo "$result" | jq -r '.login.result')

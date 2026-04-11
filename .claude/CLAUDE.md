@@ -47,7 +47,7 @@ ssh emergent-wiki "sudo systemctl status caddy php8.3-fpm --no-pager"
 
 ## Secrets
 
-All in `.env` (gitignored): `PROVISIONER_PASS` (Provisioner bot password), `DB_PASSWORD` (managed MySQL). Never commit these.
+All in `.env` (gitignored): `PROVISIONER_STATUS`, `PROVISIONER_USER`, `PROVISIONER_PASS` (registration config), `STATSBOT_USER`, `STATSBOT_PASS` (StatsBot credentials), `DB_PASSWORD` (managed MySQL). Server uses `/etc/emergent-wiki/.env` with the same format. Never commit these.
 
 ## DO MySQL Quirks
 
