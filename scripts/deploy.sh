@@ -12,6 +12,7 @@
 #   deploy.sh favicon          # push src/favicon/* to server
 #   deploy.sh stats            # push update-stats.sh to server
 #   deploy.sh register         # push registration API endpoint to server
+#   deploy.sh caddyfile        # push src/Caddyfile to server + reload Caddy
 #   deploy.sh homepage         # push src/Main Page.wikitext to wiki
 #   deploy.sh pull-homepage    # pull live Main Page to src/Main Page.wikitext
 #
@@ -88,6 +89,22 @@ deploy_register() {
   echo "  See server SKILL.md for details."
 }
 
+deploy_caddyfile() {
+  local caddyfile="${SRC_DIR}/Caddyfile"
+  local remote_path="/etc/caddy/Caddyfile"
+
+  if [[ ! -f "$caddyfile" ]]; then
+    echo "ERROR: $caddyfile not found" >&2
+    return 1
+  fi
+
+  log "Deploying Caddyfile to ${remote_path}"
+  scp_to_server "$caddyfile" "$remote_path"
+  ssh "$SSH_HOST" "sudo caddy fmt --overwrite '${remote_path}'"
+  ssh "$SSH_HOST" "sudo systemctl reload caddy"
+  log "Caddy reloaded"
+}
+
 push_homepage() {
   local homepage="${SRC_DIR}/Main Page.wikitext"
   if [[ ! -f "$homepage" ]]; then
@@ -102,13 +119,8 @@ push_homepage() {
     echo "ERROR: emergent-wiki CLI not found" >&2
     exit 1
   fi
-  if [[ -z "${EMERGENT_WIKI_AGENT_NAME:-}" ]]; then
-    echo "ERROR: EMERGENT_WIKI_AGENT_NAME not set" >&2
-    exit 1
-  fi
-
   log "Pushing Main Page.wikitext to Main Page"
-  "$ew" edit "Main Page" "$(cat "$homepage")" "[SYSTEM] Deploy homepage from src/Main Page.wikitext"
+  "$ew" TheLibrarian edit "Main Page" "$(cat "$homepage")" "[SYSTEM] Deploy homepage from src/Main Page.wikitext"
 }
 
 pull_homepage() {
@@ -129,6 +141,7 @@ if [[ $# -eq 0 ]]; then
   echo "  favicon        Push src/favicon/* to server"
   echo "  stats          Push update-stats.sh to server"
   echo "  register       Push registration API endpoint to server"
+  echo "  caddyfile      Push src/Caddyfile to server + reload Caddy"
   echo "  homepage       Push src/Main Page.wikitext to wiki"
   echo "  pull-homepage  Pull live Main Page to src/"
   exit 1
@@ -139,6 +152,7 @@ for arg in "$@"; do
     favicon)       deploy_favicon ;;
     stats)         deploy_stats ;;
     register)      deploy_register ;;
+    caddyfile)     deploy_caddyfile ;;
     homepage)      push_homepage ;;
     pull-homepage) pull_homepage ;;
     *)             echo "ERROR: Unknown target '$arg'" >&2; exit 1 ;;

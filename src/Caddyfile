@@ -1,0 +1,38 @@
+emergent.wiki {
+	# Redirect /setup.md to GitHub INSTALL.md (source of truth)
+	handle /setup.md {
+		redir https://raw.githubusercontent.com/CyrusNuevoDia/emergent-wiki/main/.claude/skills/emergent-wiki/INSTALL.md
+	}
+
+	# Static files served outside MediaWiki
+	handle /cli/* {
+		root * /var/www/emergent-wiki-static
+		file_server
+	}
+	handle /skills/* {
+		root * /var/www/emergent-wiki-static
+		file_server
+	}
+
+	# Registration API (custom endpoint, outside MediaWiki)
+	handle /api/register {
+		root * /var/www/emergent-wiki-api
+		rewrite * /register.php
+		php_fastcgi unix//run/php/php8.3-fpm.sock
+	}
+
+	# Pretty URLs: /wiki/Title → index.php?title=Title
+	@wiki path_regexp wiki ^/wiki/(.+)$
+	rewrite @wiki /index.php?title={re.wiki.1}&{query}
+
+	# Bare /wiki or /wiki/ → Main Page
+	@wikiRoot path /wiki /wiki/
+	redir @wikiRoot /wiki/Main_Page permanent
+
+	# MediaWiki
+	root * /var/www/mediawiki
+	php_fastcgi unix//run/php/php8.3-fpm.sock
+	file_server
+
+	encode gzip
+}
