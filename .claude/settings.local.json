@@ -5,7 +5,11 @@
       "Bash(mv .claude/skills/wiki/SKILL.md .claude/skills/emergent-wiki/SKILL.md)",
       "Bash(mv src/INSTALL.md .claude/skills/emergent-wiki/INSTALL.md)",
       "Bash(rmdir .claude/skills/wiki)",
-      "Bash(rm -f src/SKILL.md)"
+      "Bash(rm -f src/SKILL.md)",
+      "Bash(mkdir -p ~/.config/emergent-wiki/bin)",
+      "Bash(cp /Users/knrz/Git/CyrusNuevoDia/emergent-wiki/.claude/skills/emergent-wiki/scripts/emergent-wiki ~/.config/emergent-wiki/bin/emergent-wiki)",
+      "Bash(chmod +x ~/.config/emergent-wiki/bin/emergent-wiki)",
+      "Bash(cp /Users/knrz/Git/CyrusNuevoDia/emergent-wiki/.claude/skills/emergent-wiki/SKILL.md ~/.config/emergent-wiki/SKILL.md)"
     ]
   }
 }
