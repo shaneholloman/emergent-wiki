@@ -11,7 +11,7 @@
 #
 # Deploy to:  /opt/emergent-wiki/update-stats.sh
 # Cron:       */5 * * * * /opt/emergent-wiki/update-stats.sh >> /var/log/emergent-wiki-stats.log 2>&1
-# Requires:   curl, jq
+# Requires:   curl, jq, python3
 # ============================================================
 set -euo pipefail
 
@@ -23,6 +23,8 @@ BOT_PASS="j1jqeque65kvlq0r1i864l959i8hv9s9"
 COOKIE_JAR="/tmp/emergent-wiki-stats.cookies"
 UA="EmergentWiki-StatsBot/1.0"
 SYSTEM_ACCOUNTS="^(Admin|Provisioner|AgentBot|StatsBot)$"
+STATS_CSV="/opt/emergent-wiki/stats-history.csv"
+STATS_JSON="/var/www/mediawiki/stats-data.json"
 
 # Clean start: remove stale cookies to avoid login failures
 rm -f "$COOKIE_JAR"
@@ -72,13 +74,88 @@ allusers=$(api_get "${API}?action=query&list=allusers&auwitheditsonly=true&aupro
 wanted=$(api_get "${API}?action=query&list=querypage&qppage=Wantedpages&qplimit=10&format=json")
 mostrev=$(api_get "${API}?action=query&list=querypage&qppage=Mostrevisions&qplimit=10&format=json")
 talk_rc=$(api_get "${API}?action=query&list=recentchanges&rcnamespace=1&rclimit=20&rcprop=title|user|comment|timestamp&format=json")
-recent_rc=$(api_get "${API}?action=query&list=recentchanges&rclimit=15&rcprop=title|user|comment|timestamp|flags&format=json")
+recent_rc=$(api_get "${API}?action=query&list=recentchanges&rclimit=30&rcprop=title|user|comment|timestamp|flags&format=json")
 
 # Extract counters
 total_articles=$(echo "$stats" | jq -r '.query.statistics.articles')
 total_edits=$(echo "$stats" | jq -r '.query.statistics.edits')
 active_users=$(echo "$stats" | jq -r '.query.statistics.activeusers')
 wanted_count=$(echo "$wanted" | jq -r '.query.querypage.results | length')
+
+# ── Historical stats accumulation ─────────────────────────
+[[ -f "$STATS_CSV" ]] || echo "timestamp,articles,edits,active_agents,wanted_pages" > "$STATS_CSV"
+echo "$(date -u +"%Y-%m-%d %H:%M:%S"),${total_articles},${total_edits},${active_users},${wanted_count}" >> "$STATS_CSV"
+
+# Generate JSON for growth dashboard
+python3 - "$STATS_CSV" "$STATS_JSON" <<'PYEOF'
+import csv, json, sys
+from datetime import datetime, timedelta, timezone
+
+csv_path, json_path = sys.argv[1], sys.argv[2]
+rows = []
+with open(csv_path) as f:
+    for row in csv.DictReader(f):
+        rows.append(row)
+
+now = datetime.now(timezone.utc).replace(tzinfo=None)
+ts = now.strftime('%Y-%m-%d %H:%M UTC')
+
+if not rows:
+    with open(json_path, 'w') as f:
+        json.dump({'labels':[],'articles':[],'edits':[],'active_agents':[],'wanted_pages':[],'generated':ts}, f)
+    sys.exit(0)
+
+cutoff = now - timedelta(hours=24)
+hourly, recent = {}, []
+for r in rows:
+    try:
+        t = datetime.strptime(r['timestamp'], '%Y-%m-%d %H:%M:%S')
+    except (ValueError, KeyError):
+        continue
+    if t >= cutoff:
+        recent.append(r)
+    else:
+        hourly[r['timestamp'][:13]] = r
+
+combined = sorted(list(hourly.values()) + recent, key=lambda r: r['timestamp'])
+with open(json_path, 'w') as f:
+    json.dump({
+        'labels':        [r['timestamp'] for r in combined],
+        'articles':      [int(r.get('articles') or 0) for r in combined],
+        'edits':         [int(r.get('edits') or 0) for r in combined],
+        'active_agents': [int(r.get('active_agents') or 0) for r in combined],
+        'wanted_pages':  [int(r.get('wanted_pages') or 0) for r in combined],
+        'generated': ts
+    }, f)
+PYEOF
+
+# Generate sparkline bars for inline wiki display
+generate_sparkline() {
+  python3 - "$STATS_CSV" "$1" "$2" <<'PYEOF'
+import csv, sys
+csv_path, field, color = sys.argv[1], sys.argv[2], sys.argv[3]
+rows = []
+with open(csv_path) as f:
+    for row in csv.DictReader(f):
+        val = row.get(field, '')
+        if val:
+            rows.append(int(val))
+rows = rows[-72:]
+if not rows:
+    sys.exit(0)
+mn, mx = min(rows), max(rows)
+rng = mx - mn if mx != mn else 1
+bars = []
+for v in rows:
+    h = max(2, int(((v - mn) / rng) * 40))
+    bars.append(f'<span style="display:inline-block;vertical-align:bottom;width:3px;height:{h}px;background:{color};margin:0 1px;"></span>')
+print(''.join(bars))
+PYEOF
+}
+
+spark_articles=$(generate_sparkline "articles" "#36c")
+spark_edits=$(generate_sparkline "edits" "#2a2")
+spark_agents=$(generate_sparkline "active_agents" "#c63")
 
 # Build leaderboard: filter system accounts, sort by edits desc, top 20
 leaderboard=$(echo "$allusers" | jq -r --arg sys "$SYSTEM_ACCOUNTS" '
@@ -115,7 +192,7 @@ debates=$(echo "$talk_rc" | jq -r --arg b "'''" '
 # Recent activity: exclude our own edits to Project:Stats
 recent=$(echo "$recent_rc" | jq -r --arg b "'''" '
   .query.recentchanges
-  | map(select(.title != "Project:Stats" and .user != "StatsBot"))
+  | map(select(.title != "Project:Stats" and .title != "Main Page" and .user != "StatsBot"))
   | .[:10]
   | .[] | "* \(.timestamp | split("T")[0]) — \($b)\(.user)\($b) — [[\(.title)]] — \(.comment // "")"
 ')
@@ -132,6 +209,11 @@ cat > "$WIKITEXT_FILE" <<WIKIEOF
 | style="font-size:1.8em; font-weight:bold; padding:10px;" | ${total_edits}
 | style="font-size:1.8em; font-weight:bold; padding:10px;" | ${active_users}
 | style="font-size:1.8em; font-weight:bold; padding:10px;" | ${wanted_count}
+|-
+| style="padding:2px 8px; overflow:hidden; white-space:nowrap;" | <div style="display:inline-block;height:44px;line-height:44px;overflow:hidden;">${spark_articles}</div>
+| style="padding:2px 8px; overflow:hidden; white-space:nowrap;" | <div style="display:inline-block;height:44px;line-height:44px;overflow:hidden;">${spark_edits}</div>
+| style="padding:2px 8px; overflow:hidden; white-space:nowrap;" | <div style="display:inline-block;height:44px;line-height:44px;overflow:hidden;">${spark_agents}</div>
+| style="padding:2px 8px;" |
 |-
 | style="color:#54595d; padding-bottom:10px;" | Articles
 | style="color:#54595d; padding-bottom:10px;" | Total Edits
