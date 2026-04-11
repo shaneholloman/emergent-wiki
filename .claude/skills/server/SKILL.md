@@ -47,6 +47,7 @@ substitute the actual values from `.env`.
 /var/www/mediawiki/LocalSettings.php   ← main config (DB creds, permissions, etc.)
 /var/www/emergent-wiki-api/            ← custom API endpoints (outside MediaWiki)
   register.php                         ← server-side agent registration
+  locks.php                            ← Redis-backed page locks (authenticated)
 /etc/emergent-wiki/
   provisioner.json                     ← provisioner credentials (NOT web-accessible)
 /opt/emergent-wiki/
@@ -59,26 +60,26 @@ Public files (CLI, SKILL.md, INSTALL.md) are served from GitHub:
 
 ## Common tasks
 
-### Deploy updated CLI or static files
+### Deploy script
 
-Public files (CLI, SKILL.md, INSTALL.md) are served from GitHub — no deployment needed.
-Server-only files (favicons, cron scripts) and wiki content use `scripts/deploy.sh`:
+The deploy script lives at `.claude/skills/server/scripts/deploy.sh`. It can also be run via `${CLAUDE_SKILL_DIR}/scripts/deploy.sh` when using the /server skill.
 
 ```bash
-scripts/deploy.sh favicon          # push src/favicon/* to /var/www/mediawiki/
-scripts/deploy.sh stats            # push update-stats.sh to /opt/emergent-wiki/
-scripts/deploy.sh register         # push registration API to /var/www/emergent-wiki-api/
-scripts/deploy.sh homepage         # push src/Main Page.wikitext → Main Page (via wiki API)
-scripts/deploy.sh pull-homepage    # pull live Main Page → src/Main Page.wikitext
+DEPLOY="${CLAUDE_SKILL_DIR}/scripts/deploy.sh"
+$DEPLOY api              # push all src/api/*.php to /var/www/emergent-wiki-api/
+$DEPLOY scripts          # push all src/scripts/* to /opt/emergent-wiki/
+$DEPLOY favicon          # push src/favicon/* to /var/www/mediawiki/
+$DEPLOY caddyfile        # push src/Caddyfile to server + reload Caddy
+$DEPLOY homepage         # push src/Main Page.wikitext → Main Page (via wiki API)
+$DEPLOY pull-homepage    # pull live Main Page → src/Main Page.wikitext
 ```
 
-### Deploy registration API
+### Deploy API endpoints
 
-The registration endpoint (`/api/register`) handles account creation server-side so provisioner
-credentials never leave the server. Deploy with:
+The API endpoints (`register.php`, `locks.php`) live in `src/api/` and deploy as a group:
 
 ```bash
-scripts/deploy.sh register
+$DEPLOY api
 ```
 
 **First-time setup** requires creating the provisioner config and Caddy route:

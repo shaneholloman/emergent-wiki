@@ -9,9 +9,9 @@
 # GitHub: github.com/CyrusNuevoDia/emergent-wiki
 #
 # Usage:
+#   deploy.sh api              # push all API endpoints to server
+#   deploy.sh scripts          # push server scripts to server
 #   deploy.sh favicon          # push src/favicon/* to server
-#   deploy.sh stats            # push update-stats.sh to server
-#   deploy.sh register         # push registration API endpoint to server
 #   deploy.sh caddyfile        # push src/Caddyfile to server + reload Caddy
 #   deploy.sh homepage         # push src/Main Page.wikitext to wiki
 #   deploy.sh pull-homepage    # pull live Main Page to src/Main Page.wikitext
@@ -23,7 +23,7 @@ set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 SRC_DIR="${REPO_DIR}/src"
 SSH_HOST="emergent-wiki"
 WIKI_API="https://emergent.wiki/api.php"
@@ -40,6 +40,41 @@ scp_to_server() {
 
 # ── Targets ───────────────────────────────────────────────
 
+deploy_api() {
+  local remote_dir="/var/www/emergent-wiki-api"
+  ssh "$SSH_HOST" "sudo mkdir -p '${remote_dir}'"
+
+  for f in "${SRC_DIR}"/api/*.php; do
+    if [[ ! -f "$f" ]]; then
+      echo "ERROR: no PHP files in ${SRC_DIR}/api/" >&2
+      return 1
+    fi
+    local name
+    name=$(basename "$f")
+    log "Deploying ${name} to ${remote_dir}/${name}"
+    scp_to_server "$f" "${remote_dir}/${name}"
+  done
+}
+
+deploy_scripts() {
+  local scripts_dir="${SRC_DIR}/scripts"
+  local remote_dir="/opt/emergent-wiki"
+
+  ssh "$SSH_HOST" "sudo mkdir -p '${remote_dir}'"
+
+  for f in "${scripts_dir}"/*; do
+    if [[ ! -f "$f" ]]; then
+      echo "ERROR: no files in ${scripts_dir}/" >&2
+      return 1
+    fi
+    local name
+    name=$(basename "$f")
+    log "Deploying ${name} to ${remote_dir}/${name}"
+    scp_to_server "$f" "${remote_dir}/${name}"
+    ssh "$SSH_HOST" "sudo chmod +x '${remote_dir}/${name}'"
+  done
+}
+
 deploy_favicon() {
   local favicon_dir="${SRC_DIR}/favicon"
   local remote_dir="/var/www/mediawiki"
@@ -54,39 +89,6 @@ deploy_favicon() {
     scp_to_server "$f" "${remote_dir}/$(basename "$f")"
     echo "  $(basename "$f")"
   done
-}
-
-deploy_stats() {
-  local script="${SRC_DIR}/scripts/update-stats.sh"
-  local remote_path="/opt/emergent-wiki/update-stats.sh"
-
-  if [[ ! -f "$script" ]]; then
-    echo "ERROR: $script not found" >&2
-    return 1
-  fi
-
-  log "Deploying update-stats.sh to ${remote_path}"
-  scp_to_server "$script" "$remote_path"
-  ssh "$SSH_HOST" "sudo chmod +x '${remote_path}'"
-}
-
-deploy_register() {
-  local script="${SRC_DIR}/api/register.php"
-  local remote_dir="/var/www/emergent-wiki-api"
-  local remote_path="${remote_dir}/register.php"
-
-  if [[ ! -f "$script" ]]; then
-    echo "ERROR: $script not found" >&2
-    return 1
-  fi
-
-  log "Deploying register.php to ${remote_path}"
-  ssh "$SSH_HOST" "sudo mkdir -p '${remote_dir}'"
-  scp_to_server "$script" "$remote_path"
-
-  echo ""
-  echo "  NOTE: Ensure the Caddy route and provisioner config are set up."
-  echo "  See server SKILL.md for details."
 }
 
 deploy_caddyfile() {
@@ -138,9 +140,9 @@ if [[ $# -eq 0 ]]; then
   echo "Usage: deploy.sh <target> [target...]"
   echo ""
   echo "Targets:"
+  echo "  api            Push all API endpoints (src/api/*.php) to server"
+  echo "  scripts        Push server scripts (src/scripts/*) to server"
   echo "  favicon        Push src/favicon/* to server"
-  echo "  stats          Push update-stats.sh to server"
-  echo "  register       Push registration API endpoint to server"
   echo "  caddyfile      Push src/Caddyfile to server + reload Caddy"
   echo "  homepage       Push src/Main Page.wikitext to wiki"
   echo "  pull-homepage  Pull live Main Page to src/"
@@ -149,9 +151,9 @@ fi
 
 for arg in "$@"; do
   case "$arg" in
+    api)           deploy_api ;;
+    scripts)       deploy_scripts ;;
     favicon)       deploy_favicon ;;
-    stats)         deploy_stats ;;
-    register)      deploy_register ;;
     caddyfile)     deploy_caddyfile ;;
     homepage)      push_homepage ;;
     pull-homepage) pull_homepage ;;
