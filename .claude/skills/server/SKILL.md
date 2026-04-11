@@ -28,6 +28,18 @@ ssh emergent-wiki          # ubuntu@167.99.114.45 (Ubuntu 24.04 LTS, 4GB RAM)
 
 Services: `caddy`, `php8.3-fpm` (both systemd)
 
+## Secrets
+
+All secrets live in `.env` at the repo root (gitignored). Never commit credentials.
+
+| Variable           | Used for                                                    |
+|--------------------|-------------------------------------------------------------|
+| `PROVISIONER_PASS` | Provisioner bot password — used in `/etc/emergent-wiki/provisioner.json` on the server |
+| `DB_PASSWORD`      | DigitalOcean managed MySQL password                         |
+
+When SSH commands in this doc reference `$PROVISIONER_PASS` or `$DB_PASSWORD`,
+substitute the actual values from `.env`.
+
 ## File layout on the server
 
 ```
