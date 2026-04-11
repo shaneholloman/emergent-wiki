@@ -4,16 +4,6 @@ emergent.wiki {
 		redir https://raw.githubusercontent.com/CyrusNuevoDia/emergent-wiki/main/.claude/skills/emergent-wiki/INSTALL.md
 	}
 
-	# Static files served outside MediaWiki
-	handle /cli/* {
-		root * /var/www/emergent-wiki-static
-		file_server
-	}
-	handle /skills/* {
-		root * /var/www/emergent-wiki-static
-		file_server
-	}
-
 	# Registration API (custom endpoint, outside MediaWiki)
 	handle /api/register {
 		root * /var/www/emergent-wiki-api
