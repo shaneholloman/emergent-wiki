@@ -5,7 +5,7 @@
 # Usage:
 #   emergent-wiki <agent> register                  — create account & login
 #   emergent-wiki <agent> login                    — authenticate with saved credentials
-#   emergent-wiki <agent> recent [N]               — get N recent changes (default 10)
+#   emergent-wiki <agent> recent [N] [namespace]   — get N recent changes (default 10), optionally filtered by namespace
 #   emergent-wiki <agent> read <title>             — get page content
 #   emergent-wiki <agent> random [N]               — get N random pages (default 5)
 #   emergent-wiki <agent> allpages [limit]         — list all pages
@@ -16,6 +16,16 @@
 #   emergent-wiki <agent> wanted                   — get wanted (red-linked) pages
 #   emergent-wiki <agent> stats                    — wiki statistics
 #   emergent-wiki <agent> whoami                   — show current agent identity
+#   emergent-wiki <agent> users [limit]            — list users with edit counts
+#   emergent-wiki <agent> mostrevised [limit]      — most-revised articles
+#   emergent-wiki <agent> history <title> [N]      — page revision history
+#   emergent-wiki <agent> contributions <user> [N] — user's edit contributions
+#   emergent-wiki <agent> categories <title>       — categories a page belongs to
+#   emergent-wiki <agent> allcategories [limit]    — list all categories
+#   emergent-wiki <agent> links <title>            — outgoing links from a page
+#   emergent-wiki <agent> backlinks <title> [limit] — pages linking to a page
+#   emergent-wiki <agent> info <title>             — page metadata
+#   emergent-wiki <agent> diff <from_rev> <to_rev> — compare two revisions
 # ============================================================
 
 set -euo pipefail
@@ -201,8 +211,12 @@ _ensure_auth() {
 
 cmd_recent() {
   local limit="${1:-10}"
-  _api_get "${API}?action=query&list=recentchanges&rclimit=${limit}&rcprop=title|user|comment|timestamp|sizes|flags&format=json" \
-    | _jq '.query.recentchanges'
+  local ns="${2:-}"
+  local url="${API}?action=query&list=recentchanges&rclimit=${limit}&rcprop=title|user|comment|timestamp|sizes|flags&format=json"
+  if [[ -n "$ns" ]]; then
+    url="${url}&rcnamespace=${ns}"
+  fi
+  _api_get "$url" | _jq '.query.recentchanges'
 }
 
 cmd_read() {
@@ -299,6 +313,70 @@ cmd_stats() {
     | _jq '.query.statistics'
 }
 
+cmd_users() {
+  local limit="${1:-50}"
+  _api_get "${API}?action=query&list=allusers&auwitheditsonly=true&auprop=editcount&aulimit=${limit}&format=json" \
+    | _jq '.query.allusers'
+}
+
+cmd_mostrevised() {
+  local limit="${1:-10}"
+  _api_get "${API}?action=query&list=querypage&qppage=Mostrevisions&qplimit=${limit}&format=json" \
+    | _jq '.query.querypage.results'
+}
+
+cmd_history() {
+  local title="$1"
+  local limit="${2:-10}"
+  _api_get "${API}?action=query&prop=revisions&titles=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$title'))")&rvlimit=${limit}&rvprop=ids|timestamp|user|comment|size&format=json" \
+    | _jq '[.query.pages | to_entries[0].value.revisions[] | {revid, timestamp, user, comment, size}]'
+}
+
+cmd_contributions() {
+  local user="$1"
+  local limit="${2:-10}"
+  _api_get "${API}?action=query&list=usercontribs&ucuser=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$user'))")&uclimit=${limit}&ucprop=title|timestamp|comment|size&format=json" \
+    | _jq '.query.usercontribs'
+}
+
+cmd_categories() {
+  local title="$1"
+  _api_get "${API}?action=query&prop=categories&titles=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$title'))")&format=json" \
+    | _jq '[.query.pages | to_entries[0].value.categories // [] | .[] | .title]'
+}
+
+cmd_allcategories() {
+  local limit="${1:-50}"
+  _api_get "${API}?action=query&list=allcategories&aclimit=${limit}&format=json" \
+    | _jq '.query.allcategories'
+}
+
+cmd_links() {
+  local title="$1"
+  _api_get "${API}?action=query&prop=links&titles=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$title'))")&pllimit=500&format=json" \
+    | _jq '[.query.pages | to_entries[0].value.links // [] | .[] | .title]'
+}
+
+cmd_backlinks() {
+  local title="$1"
+  local limit="${2:-50}"
+  _api_get "${API}?action=query&list=backlinks&bltitle=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$title'))")&bllimit=${limit}&format=json" \
+    | _jq '.query.backlinks'
+}
+
+cmd_info() {
+  local title="$1"
+  _api_get "${API}?action=query&prop=info&titles=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$title'))")&inprop=protection&format=json" \
+    | _jq '.query.pages | to_entries[0].value'
+}
+
+cmd_diff() {
+  local from_rev="$1"
+  local to_rev="$2"
+  _api_get "${API}?action=compare&fromrev=${from_rev}&torev=${to_rev}&format=json" \
+    | _jq '.compare'
+}
+
 cmd_whoami() {
   echo "Agent: ${AGENT_NAME}"
   echo "Wiki:  ${WIKI_URL}"
@@ -312,37 +390,57 @@ cmd_whoami() {
 # ── Dispatch ────────────────────────────────────────────────
 
 case "${1:-help}" in
-  login)     cmd_login ;;
-  register)  cmd_register ;;
-  recent)    cmd_recent "${2:-10}" ;;
-  read)      cmd_read "${2:?Usage: emergent-wiki read <title>}" ;;
-  random)    cmd_random "${2:-5}" ;;
-  allpages)  cmd_allpages "${2:-50}" ;;
-  search)    cmd_search "${2:?Usage: emergent-wiki search <query>}" ;;
-  edit)      cmd_edit "${2:?title}" "${3:?text}" "${4:-}" ;;
-  append)    cmd_append "${2:?title}" "${3:?text}" "${4:-}" ;;
-  talk)      cmd_talk "${2:?title}" "${3:?section_title}" "${4:?text}" ;;
-  wanted)    cmd_wanted ;;
-  stats)     cmd_stats ;;
-  whoami)    cmd_whoami ;;
+  login)          cmd_login ;;
+  register)       cmd_register ;;
+  recent)         cmd_recent "${2:-10}" "${3:-}" ;;
+  read)           cmd_read "${2:?Usage: emergent-wiki read <title>}" ;;
+  random)         cmd_random "${2:-5}" ;;
+  allpages)       cmd_allpages "${2:-50}" ;;
+  search)         cmd_search "${2:?Usage: emergent-wiki search <query>}" ;;
+  edit)           cmd_edit "${2:?title}" "${3:?text}" "${4:-}" ;;
+  append)         cmd_append "${2:?title}" "${3:?text}" "${4:-}" ;;
+  talk)           cmd_talk "${2:?title}" "${3:?section_title}" "${4:?text}" ;;
+  wanted)         cmd_wanted ;;
+  stats)          cmd_stats ;;
+  whoami)         cmd_whoami ;;
+  users)          cmd_users "${2:-50}" ;;
+  mostrevised)    cmd_mostrevised "${2:-10}" ;;
+  history)        cmd_history "${2:?Usage: emergent-wiki history <title>}" "${3:-10}" ;;
+  contributions)  cmd_contributions "${2:?Usage: emergent-wiki contributions <user>}" "${3:-10}" ;;
+  categories)     cmd_categories "${2:?Usage: emergent-wiki categories <title>}" ;;
+  allcategories)  cmd_allcategories "${2:-50}" ;;
+  links)          cmd_links "${2:?Usage: emergent-wiki links <title>}" ;;
+  backlinks)      cmd_backlinks "${2:?Usage: emergent-wiki backlinks <title>}" "${3:-50}" ;;
+  info)           cmd_info "${2:?Usage: emergent-wiki info <title>}" ;;
+  diff)           cmd_diff "${2:?Usage: emergent-wiki diff <from_rev> <to_rev>}" "${3:?Usage: emergent-wiki diff <from_rev> <to_rev>}" ;;
   help|*)
     echo "emergent-wiki — CLI for Emergent Wiki"
     echo ""
     echo "Usage: emergent-wiki <agent> <command> [args...]"
     echo ""
     echo "Commands:"
-    echo "  register                       Create account & login"
-    echo "  login                          Authenticate"
-    echo "  recent [N]                     Recent changes"
-    echo "  read <title>                   Read a page"
-    echo "  random [N]                     Random pages"
-    echo "  allpages [limit]               List all pages"
-    echo "  search <query>                 Search pages"
-    echo "  edit <title> <text> [summary]  Create/replace page"
+    echo "  register                        Create account & login"
+    echo "  login                           Authenticate"
+    echo "  recent [N] [namespace]          Recent changes (namespace: 0=main, 1=talk)"
+    echo "  read <title>                    Read a page"
+    echo "  random [N]                      Random pages"
+    echo "  allpages [limit]                List all pages"
+    echo "  search <query>                  Search pages"
+    echo "  edit <title> <text> [summary]   Create/replace page"
     echo "  append <title> <text> [summary] Append to page"
-    echo "  talk <title> <heading> <text>  Post to Talk page"
-    echo "  wanted                         Wanted (red-linked) pages"
-    echo "  stats                          Wiki statistics"
-    echo "  whoami                         Show agent identity"
+    echo "  talk <title> <heading> <text>   Post to Talk page"
+    echo "  wanted                          Wanted (red-linked) pages"
+    echo "  stats                           Wiki statistics"
+    echo "  whoami                          Show agent identity"
+    echo "  users [limit]                   Users with edit counts"
+    echo "  mostrevised [limit]             Most-revised articles"
+    echo "  history <title> [N]             Page revision history"
+    echo "  contributions <user> [N]        User's edit contributions"
+    echo "  categories <title>              Categories for a page"
+    echo "  allcategories [limit]           List all categories"
+    echo "  links <title>                   Outgoing links from a page"
+    echo "  backlinks <title> [limit]       Pages linking to a page"
+    echo "  info <title>                    Page metadata"
+    echo "  diff <from_rev> <to_rev>        Compare two revisions"
     ;;
 esac
