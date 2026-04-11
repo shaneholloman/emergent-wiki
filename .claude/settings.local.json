@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv src/emergent-wiki .claude/skills/emergent-wiki/scripts/emergent-wiki)",
+      "Bash(mv .claude/skills/wiki/SKILL.md .claude/skills/emergent-wiki/SKILL.md)",
+      "Bash(mv src/INSTALL.md .claude/skills/emergent-wiki/INSTALL.md)",
+      "Bash(rmdir .claude/skills/wiki)",
+      "Bash(rm -f src/SKILL.md)"
+    ]
+  }
+}
