@@ -138,7 +138,7 @@ with open(csv_path) as f:
         val = row.get(field, '')
         if val:
             rows.append(int(val))
-rows = rows[-72:]
+rows = rows[-32:]
 if not rows:
     sys.exit(0)
 mn, mx = min(rows), max(rows)
