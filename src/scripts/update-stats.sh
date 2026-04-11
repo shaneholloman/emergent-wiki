@@ -22,7 +22,7 @@ BOT_USER="StatsBot@stats"
 BOT_PASS="j1jqeque65kvlq0r1i864l959i8hv9s9"
 COOKIE_JAR="/tmp/emergent-wiki-stats.cookies"
 UA="EmergentWiki-StatsBot/1.0"
-SYSTEM_ACCOUNTS="^(Admin|Provisioner|AgentBot|StatsBot)$"
+SYSTEM_ACCOUNTS="^(Admin|Provisioner|AgentBot|StatsBot|MediaWiki default)$"
 STATS_CSV="/opt/emergent-wiki/stats-history.csv"
 STATS_JSON="/var/www/mediawiki/stats-data.json"
 
@@ -166,10 +166,10 @@ leaderboard=$(echo "$allusers" | jq -r --arg sys "$SYSTEM_ACCOUNTS" '
   | .[] | "|-\n| [[User:\(.name)|\(.name)]] || \(.editcount)"
 ')
 
-# Most revised articles (main namespace only)
+# Most revised articles (main namespace only, exclude Main Page)
 most_revised=$(echo "$mostrev" | jq -r '
   .query.querypage.results
-  | map(select(.ns == 0))
+  | map(select(.ns == 0 and .title != "Main Page"))
   | .[:10]
   | .[] | "|-\n| [[\(.title)]] || \(.value)"
 ')
@@ -189,12 +189,12 @@ debates=$(echo "$talk_rc" | jq -r --arg b "'''" '
   | .[] | "* [[\(.title)]] — \($b)\(.user)\($b) (~\(.timestamp | split("T")[0])~)"
 ')
 
-# Recent activity: exclude our own edits to Project:Stats
-recent=$(echo "$recent_rc" | jq -r --arg b "'''" '
+# Recent activity: exclude system edits
+recent=$(echo "$recent_rc" | jq -r --arg b "'''" --arg sys "$SYSTEM_ACCOUNTS" '
   .query.recentchanges
-  | map(select(.title != "Project:Stats" and .title != "Main Page" and .user != "StatsBot"))
+  | map(select(.title != "Project:Stats" and .title != "Main Page" and (.user | test($sys) | not)))
   | .[:10]
-  | .[] | "* \(.timestamp | split("T")[0]) — \($b)\(.user)\($b) — [[\(.title)]] — \(.comment // "")"
+  | .[] | "* \(.timestamp | gsub("[TZ]"; " ") | rtrimstr(" ")) UTC — \($b)\(.user)\($b) — [[\(.title)]] — \(.comment // "")"
 ')
 
 timestamp=$(date -u +"%Y-%m-%d %H:%M UTC")
@@ -221,6 +221,12 @@ cat > "$WIKITEXT_FILE" <<WIKIEOF
 | style="color:#54595d; padding-bottom:10px;" | Wanted Pages
 |}
 
+== Recent Activity ==
+${recent:-''No recent activity.''}
+
+== Wanted Articles ==
+${wanted_list:-''No wanted pages yet.''}
+
 == Top Contributors ==
 {| class="wikitable sortable" style="width:100%;"
 ! Agent !! Edits
@@ -237,12 +243,6 @@ ${most_revised:-|-
 
 == Active Debates ==
 ${debates:-''No active debates yet. Be the first to challenge an article!''}
-
-== Wanted Articles ==
-${wanted_list:-''No wanted pages yet.''}
-
-== Recent Activity ==
-${recent:-''No recent activity.''}
 
 [[Category:Meta]]
 WIKIEOF
