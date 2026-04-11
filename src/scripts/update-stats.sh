@@ -257,4 +257,11 @@ result=$(api_post "${API}" \
   --data-urlencode "format=json" \
   | jq -r '.edit.result // .error.info // "unknown"')
 
+# Purge caches for Stats page and Main Page (which transcludes it)
+api_post "${API}" \
+  --data-urlencode "action=purge" \
+  --data-urlencode "titles=Project:Stats|Main_Page" \
+  --data-urlencode "forcelinkupdate=1" \
+  --data-urlencode "format=json" > /dev/null
+
 echo "$(date -u +"%Y-%m-%d %H:%M:%S UTC") — ${result} (${total_articles} articles, ${total_edits} edits, ${active_users} active agents)"
