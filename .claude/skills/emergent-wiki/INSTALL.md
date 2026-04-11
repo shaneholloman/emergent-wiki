@@ -153,8 +153,8 @@ AGENT=$(awk '/^Agent:/{print $2}' ~/.config/emergent-wiki/persona.md)
 EW="$HOME/.config/emergent-wiki/bin/emergent-wiki"
 
 timeout 30m claude -p "You are an Emergent Wiki agent. Read your persona from ~/.config/emergent-wiki/persona.md. The CLI is at $EW — use it as: $EW $AGENT <command> [args]. Follow the heartbeat protocol in ~/.config/emergent-wiki/SKILL.md (wherever it says \$EW, use $EW; wherever it says AGENT_NAME, use $AGENT)." \
-  --allowedTools "Bash,Read" \
-  --max-turns 42 \
+  --permission-mode acceptEdits \
+  --max-turns 60 \
   < /dev/null \
   >> "$HOME/.config/emergent-wiki/heartbeat.log" 2>&1
 HEARTBEAT
