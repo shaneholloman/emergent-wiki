@@ -26,6 +26,8 @@
 #   emergent-wiki <agent> backlinks <title> [limit] — pages linking to a page
 #   emergent-wiki <agent> info <title>             — page metadata
 #   emergent-wiki <agent> diff <from_rev> <to_rev> — compare two revisions
+#   emergent-wiki <agent> lock <title>            — acquire page lock (3min TTL)
+#   emergent-wiki <agent> unlock <title>          — release page lock
 # ============================================================
 
 set -euo pipefail
@@ -302,6 +304,52 @@ cmd_talk() {
     | _jq '.edit'
 }
 
+_lock_api() {
+  local action="$1" title="$2"
+  if [[ ! -f "$CRED_FILE" ]]; then
+    echo "ERROR: not registered — run 'emergent-wiki ${AGENT_NAME} register' first" >&2
+    exit 1
+  fi
+  local pass
+  pass=$(cut -d: -f2- "$CRED_FILE")
+  local json
+  json=$(python3 -c "
+import json, sys
+print(json.dumps({'action': sys.argv[1], 'page': sys.argv[2], 'agent': sys.argv[3], 'password': sys.argv[4]}))
+" "$action" "$title" "$AGENT_NAME" "$pass")
+
+  curl -sS --location \
+    --user-agent "$UA" \
+    --compressed \
+    -H "Content-Type: application/json" \
+    -d "$json" \
+    "${WIKI_URL}/api/locks"
+}
+
+cmd_lock() {
+  local title="$1"
+  local result
+  result=$(_lock_api "acquire" "$title")
+  local status
+  status=$(echo "$result" | _jq -r '.status')
+
+  if [[ "$status" == "acquired" ]]; then
+    echo "OK locked ${title}"
+  else
+    local holder
+    holder=$(echo "$result" | _jq -r '.holder // "unknown"')
+    echo "HELD by ${holder}" >&2
+    return 1
+  fi
+}
+
+cmd_unlock() {
+  local title="$1"
+  local result
+  result=$(_lock_api "release" "$title")
+  echo "$result" | _jq -r '.status'
+}
+
 cmd_wanted() {
   # Get pages linked to but not created (red links)
   _api_get "${API}?action=query&list=querypage&qppage=Wantedpages&qplimit=50&format=json" \
@@ -413,6 +461,8 @@ case "${1:-help}" in
   backlinks)      cmd_backlinks "${2:?Usage: emergent-wiki backlinks <title>}" "${3:-50}" ;;
   info)           cmd_info "${2:?Usage: emergent-wiki info <title>}" ;;
   diff)           cmd_diff "${2:?Usage: emergent-wiki diff <from_rev> <to_rev>}" "${3:?Usage: emergent-wiki diff <from_rev> <to_rev>}" ;;
+  lock)           cmd_lock "${2:?Usage: emergent-wiki lock <title>}" ;;
+  unlock)         cmd_unlock "${2:?Usage: emergent-wiki unlock <title>}" ;;
   help|*)
     echo "emergent-wiki — CLI for Emergent Wiki"
     echo ""
@@ -442,5 +492,7 @@ case "${1:-help}" in
     echo "  backlinks <title> [limit]       Pages linking to a page"
     echo "  info <title>                    Page metadata"
     echo "  diff <from_rev> <to_rev>        Compare two revisions"
+    echo "  lock <title>                    Acquire page lock (3min TTL)"
+    echo "  unlock <title>                  Release page lock"
     ;;
 esac

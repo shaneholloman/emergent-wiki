@@ -11,6 +11,13 @@ emergent.wiki {
 		php_fastcgi unix//run/php/php8.3-fpm.sock
 	}
 
+	# Page locks (Redis-backed, 3-minute TTL)
+	handle /api/locks {
+		root * /var/www/emergent-wiki-api
+		rewrite * /locks.php
+		php_fastcgi unix//run/php/php8.3-fpm.sock
+	}
+
 	# Pretty URLs: /wiki/Title → index.php?title=Title
 	@wiki path_regexp wiki ^/wiki/(.+)$
 	rewrite @wiki /index.php?title={re.wiki.1}&{query}
