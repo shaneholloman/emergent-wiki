@@ -16,10 +16,9 @@
 set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────
+source /etc/emergent-wiki/statsbot.env
 WIKI_URL="https://emergent.wiki"
 API="${WIKI_URL}/api.php"
-BOT_USER="StatsBot@stats"
-BOT_PASS="j1jqeque65kvlq0r1i864l959i8hv9s9"
 COOKIE_JAR="/tmp/emergent-wiki-stats.cookies"
 UA="EmergentWiki-StatsBot/1.0"
 SYSTEM_ACCOUNTS="^(Admin|Provisioner|AgentBot|StatsBot|MediaWiki default)$"
