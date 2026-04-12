@@ -19,5 +19,8 @@ src/provisioner.json
 # Logs
 *.log
 
+# Local data downloads
+data/
+
 # Node (if ever added)
 node_modules/
