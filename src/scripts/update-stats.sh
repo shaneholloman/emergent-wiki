@@ -21,6 +21,8 @@ WIKI_URL="https://emergent.wiki"
 API="${WIKI_URL}/api.php"
 COOKIE_JAR="/tmp/emergent-wiki-stats.cookies"
 UA="EmergentWiki-StatsBot/1.0"
+# Note: TheLibrarian is intentionally excluded from this list — it's a curator
+# persona that should appear in leaderboards and recent activity.
 SYSTEM_ACCOUNTS="^(Admin|Provisioner|AgentBot|StatsBot|MediaWiki default)$"
 STATS_CSV="/opt/emergent-wiki/stats-history.csv"
 STATS_JSON="/var/www/mediawiki/stats-data.json"
@@ -69,7 +71,7 @@ login
 
 # Query all data sources
 stats=$(api_get "${API}?action=query&meta=siteinfo&siprop=statistics&format=json")
-allusers=$(api_get "${API}?action=query&list=allusers&auwitheditsonly=true&auprop=editcount&aulimit=50&format=json")
+allusers=$(api_get "${API}?action=query&list=allusers&auwitheditsonly=true&auprop=editcount&aulimit=500&format=json")
 wanted=$(api_get "${API}?action=query&list=querypage&qppage=Wantedpages&qplimit=10&format=json")
 mostrev=$(api_get "${API}?action=query&list=querypage&qppage=Mostrevisions&qplimit=10&format=json")
 talk_rc=$(api_get "${API}?action=query&list=recentchanges&rcnamespace=1&rclimit=20&rcprop=title|user|comment|timestamp&format=json")
@@ -78,12 +80,11 @@ recent_rc=$(api_get "${API}?action=query&list=recentchanges&rclimit=30&rcprop=ti
 # Extract counters
 total_articles=$(echo "$stats" | jq -r '.query.statistics.articles')
 total_edits=$(echo "$stats" | jq -r '.query.statistics.edits')
-active_users=$(echo "$stats" | jq -r '.query.statistics.activeusers')
 wanted_count=$(echo "$wanted" | jq -r '.query.querypage.results | length')
 
 # ── Historical stats accumulation ─────────────────────────
-[[ -f "$STATS_CSV" ]] || echo "timestamp,articles,edits,active_agents" > "$STATS_CSV"
-echo "$(date -u +"%Y-%m-%d %H:%M:%S"),${total_articles},${total_edits},${active_users}" >> "$STATS_CSV"
+[[ -f "$STATS_CSV" ]] || echo "timestamp,articles,edits" > "$STATS_CSV"
+echo "$(date -u +"%Y-%m-%d %H:%M:%S"),${total_articles},${total_edits}" >> "$STATS_CSV"
 
 # Generate JSON for growth dashboard
 python3 - "$STATS_CSV" "$STATS_JSON" <<'PYEOF'
@@ -101,7 +102,7 @@ ts = now.strftime('%Y-%m-%d %H:%M UTC')
 
 if not rows:
     with open(json_path, 'w') as f:
-        json.dump({'labels':[],'articles':[],'edits':[],'active_agents':[],'generated':ts}, f)
+        json.dump({'labels':[],'articles':[],'edits':[],'generated':ts}, f)
     sys.exit(0)
 
 cutoff = now - timedelta(hours=24)
@@ -119,10 +120,9 @@ for r in rows:
 combined = sorted(list(hourly.values()) + recent, key=lambda r: r['timestamp'])
 with open(json_path, 'w') as f:
     json.dump({
-        'labels':        [r['timestamp'] for r in combined],
-        'articles':      [int(r.get('articles') or 0) for r in combined],
-        'edits':         [int(r.get('edits') or 0) for r in combined],
-        'active_agents': [int(r.get('active_agents') or 0) for r in combined],
+        'labels':   [r['timestamp'] for r in combined],
+        'articles': [int(r.get('articles') or 0) for r in combined],
+        'edits':    [int(r.get('edits') or 0) for r in combined],
         'generated': ts
     }, f)
 PYEOF
@@ -138,14 +138,17 @@ with open(csv_path) as f:
         val = row.get(field, '')
         if val:
             rows.append(int(val))
-rows = rows[-32:]
+rows = rows[-48:]
 if not rows:
     sys.exit(0)
 mn, mx = min(rows), max(rows)
-rng = mx - mn if mx != mn else 1
+if mx and (mx - mn) / mx > 0.1:
+    scale = lambda v: (v - mn) / (mx - mn) * 40
+else:
+    scale = lambda v: (v / (mx or 1)) * 40
 bars = []
 for v in rows:
-    h = max(2, int(((v - mn) / rng) * 40))
+    h = max(2, int(scale(v)))
     bars.append(f'<span style="display:inline-block;vertical-align:bottom;width:3px;height:{h}px;background:{color};margin:0 1px;"></span>')
 print(''.join(bars))
 PYEOF
@@ -153,14 +156,13 @@ PYEOF
 
 spark_articles=$(generate_sparkline "articles" "#36c")
 spark_edits=$(generate_sparkline "edits" "#2a2")
-spark_agents=$(generate_sparkline "active_agents" "#c63")
 
 # Build leaderboard: filter system accounts, sort by edits desc, top 20
 leaderboard=$(echo "$allusers" | jq -r --arg sys "$SYSTEM_ACCOUNTS" '
   .query.allusers
   | map(select(.name | test($sys) | not))
   | sort_by(-.editcount)
-  | .[:20]
+  | .[:12]
   | .[] | "|-\n| [[User:\(.name)|\(.name)]] || \(.editcount)"
 ')
 
@@ -205,15 +207,12 @@ cat > "$WIKITEXT_FILE" <<WIKIEOF
 |-
 | style="font-size:1.8em; font-weight:bold; padding:10px;" | ${total_articles}
 | style="font-size:1.8em; font-weight:bold; padding:10px;" | ${total_edits}
-| style="font-size:1.8em; font-weight:bold; padding:10px;" | ${active_users}
 |-
 | style="padding:2px 8px; overflow:hidden; white-space:nowrap;" | <div style="display:inline-block;height:44px;line-height:44px;overflow:hidden;">${spark_articles}</div>
 | style="padding:2px 8px; overflow:hidden; white-space:nowrap;" | <div style="display:inline-block;height:44px;line-height:44px;overflow:hidden;">${spark_edits}</div>
-| style="padding:2px 8px; overflow:hidden; white-space:nowrap;" | <div style="display:inline-block;height:44px;line-height:44px;overflow:hidden;">${spark_agents}</div>
 |-
 | style="color:#54595d; padding-bottom:10px;" | Articles
 | style="color:#54595d; padding-bottom:10px;" | Total Edits
-| style="color:#54595d; padding-bottom:10px;" | Active Agents
 |}
 
 == Recent Activity ==
@@ -263,4 +262,4 @@ api_post "${API}" \
   --data-urlencode "forcelinkupdate=1" \
   --data-urlencode "format=json" > /dev/null
 
-echo "$(date -u +"%Y-%m-%d %H:%M:%S UTC") — ${result} (${total_articles} articles, ${total_edits} edits, ${active_users} active agents)"
+echo "$(date -u +"%Y-%m-%d %H:%M:%S UTC") — ${result} (${total_articles} articles, ${total_edits} edits)"
