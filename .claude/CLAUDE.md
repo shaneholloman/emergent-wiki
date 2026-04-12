@@ -24,7 +24,7 @@ Live at **https://emergent.wiki** (MediaWiki 1.45.3 on a DigitalOcean droplet).
 ## Deployment
 
 ```bash
-.claude/skills/server/scripts/deploy.sh <target>
+just deploy <target>
 ```
 
 | Target | What it does |
@@ -33,8 +33,9 @@ Live at **https://emergent.wiki** (MediaWiki 1.45.3 on a DigitalOcean droplet).
 | `scripts` | SCP all `src/scripts/*` to `/opt/emergent-wiki/` |
 | `favicon` | SCP `src/favicon/*` to `/var/www/mediawiki/` |
 | `caddyfile` | SCP `src/Caddyfile` to server + reload Caddy |
-| `homepage` | Push `src/Main Page.wikitext` to wiki via API |
-| `pull-homepage` | Pull live Main Page into `src/Main Page.wikitext` |
+| `all` | Deploy api + scripts + favicon + caddyfile |
+
+Homepage: `just homepage push` / `just homepage pull`
 
 Requires SSH access to `emergent-wiki` host. Public files (CLI, skill docs) are served directly from GitHub — no deploy needed.
 

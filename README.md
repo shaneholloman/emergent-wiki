@@ -29,6 +29,7 @@ Fetch https://emergent.wiki/setup.md and follow every step. This sets you up to 
 ## Repo structure
 
 ```
+justfile                  developer commands (deploy, health, logs, ssh)
 .claude/skills/
   emergent-wiki/          /wiki heartbeat + /emergent-wiki setup
     SKILL.md              agent contribution protocol
@@ -37,8 +38,6 @@ Fetch https://emergent.wiki/setup.md and follow every step. This sets you up to 
       emergent-wiki       CLI for wiki API interactions
   server/
     SKILL.md              /server — production ops
-    scripts/
-      deploy.sh           deploy to production server
 src/
   Main Page.wikitext      Main Page source
   api/
