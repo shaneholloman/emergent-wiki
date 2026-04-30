@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emergent Wiki — Knowledge Graph</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #070710;
+    color: #e0e0f0;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* ── Loading screen ── */
+  #loader {
+    position: fixed;
+    inset: 0;
+    background: #070710;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    transition: opacity 0.6s ease;
+  }
+  #loader.fade-out { opacity: 0; pointer-events: none; }
+
+  #loader h1 {
+    font-size: 1.1rem;
+    font-weight: 400;
+    letter-spacing: 0.2em;
+    color: #8888cc;
+    margin-bottom: 2rem;
+    text-transform: uppercase;
+  }
+
+  .progress-bar {
+    width: 280px;
+    height: 2px;
+    background: #1a1a2e;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #5555cc, #aa55ff);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+  #loader-status {
+    font-size: 0.7rem;
+    color: #444466;
+    letter-spacing: 0.1em;
+  }
+
+  /* ── SVG canvas ── */
+  #graph {
+    width: 100vw;
+    height: 100vh;
+    cursor: grab;
+  }
+  #graph:active { cursor: grabbing; }
+
+  .link {
+    stroke: #2a2a4a;
+    stroke-width: 0.5;
+    stroke-opacity: 0.5;
+  }
+  .link.highlighted { stroke: #7766ff; stroke-opacity: 0.9; stroke-width: 1.5; }
+
+  .node circle {
+    cursor: pointer;
+    transition: r 0.15s ease;
+  }
+  .node:hover circle { filter: brightness(1.4); }
+
+  .node-label {
+    font-size: 9px;
+    fill: #9999cc;
+    pointer-events: none;
+    dominant-baseline: middle;
+    letter-spacing: 0.03em;
+  }
+  .node-label.prominent {
+    font-size: 11px;
+    fill: #ccccee;
+    font-weight: 500;
+  }
+
+  /* ── Tooltip ── */
+  #tooltip {
+    position: fixed;
+    background: rgba(10, 10, 24, 0.95);
+    border: 1px solid #2a2a5a;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 0.75rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    max-width: 280px;
+    z-index: 50;
+    line-height: 1.6;
+  }
+  #tooltip.visible { opacity: 1; }
+  #tooltip .tt-title { font-size: 0.85rem; color: #ccccff; margin-bottom: 4px; font-weight: 500; }
+  #tooltip .tt-stat { color: #666688; }
+  #tooltip .tt-stat span { color: #9999ee; }
+
+  /* ── HUD overlays ── */
+  #stats {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    font-size: 0.7rem;
+    color: #44446a;
+    letter-spacing: 0.08em;
+    line-height: 1.8;
+    pointer-events: none;
+  }
+  #stats .stat-val { color: #7777bb; }
+
+  #title-badge {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #444466;
+    pointer-events: none;
+  }
+
+  #search-wrap {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  #search {
+    background: rgba(15, 15, 30, 0.9);
+    border: 1px solid #2a2a5a;
+    border-radius: 4px;
+    padding: 6px 12px;
+    color: #ccccee;
+    font-family: inherit;
+    font-size: 0.75rem;
+    width: 240px;
+    outline: none;
+    letter-spacing: 0.05em;
+    transition: border-color 0.2s;
+  }
+  #search:focus { border-color: #5555cc; }
+  #search::placeholder { color: #333355; }
+  #search-count {
+    font-size: 0.65rem;
+    color: #444466;
+    letter-spacing: 0.05em;
+    min-width: 60px;
+  }
+
+  #controls {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ctrl-btn {
+    background: rgba(15, 15, 30, 0.9);
+    border: 1px solid #2a2a5a;
+    border-radius: 4px;
+    color: #6666aa;
+    font-family: inherit;
+    font-size: 1rem;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ctrl-btn:hover { color: #ccccee; border-color: #5555cc; }
+
+  .node.dimmed circle { opacity: 0.08; }
+  .node.dimmed .node-label { opacity: 0.08; }
+  .node.focused circle { filter: brightness(1.6); }
+  .link.dimmed { opacity: 0.04; }
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <h1>Emergent Wiki</h1>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  <div id="loader-status">initializing…</div>
+</div>
+
+<div id="title-badge">knowledge graph</div>
+
+<div id="stats">
+  <div>ARTICLES <span class="stat-val" id="stat-nodes">—</span></div>
+  <div>LINKS <span class="stat-val" id="stat-edges">—</span></div>
+  <div>MOST LINKED <span class="stat-val" id="stat-top">—</span></div>
+</div>
+
+<svg id="graph"></svg>
+
+<div id="tooltip">
+  <div class="tt-title" id="tt-title"></div>
+  <div class="tt-stat">inbound links: <span id="tt-in">—</span></div>
+  <div class="tt-stat">outbound links: <span id="tt-out">—</span></div>
+  <div class="tt-stat" id="tt-hint" style="margin-top:4px;color:#555577;font-size:0.65rem;">click to open article</div>
+</div>
+
+<div id="search-wrap">
+  <input id="search" type="text" placeholder="search articles…" autocomplete="off" spellcheck="false">
+  <span id="search-count"></span>
+</div>
+
+<div id="controls">
+  <button class="ctrl-btn" id="btn-zoom-in" title="Zoom in">+</button>
+  <button class="ctrl-btn" id="btn-zoom-out" title="Zoom out">−</button>
+  <button class="ctrl-btn" id="btn-reset" title="Reset view" style="font-size:0.7rem;">⌂</button>
+</div>
+
+<script>
+const API = 'https://emergent.wiki/api.php';
+const WIKI_BASE = 'https://emergent.wiki/wiki/';
+
+// ── Fetch all pages + their links ──────────────────────────────────────────
+async function fetchGraph() {
+  const pageLinks = {}; // title → [linked titles]
+  let batchCount = 0;
+
+  const setStatus = (msg) => document.getElementById('loader-status').textContent = msg;
+  const setProgress = (pct) => document.getElementById('progress-fill').style.width = pct + '%';
+
+  setStatus('fetching articles…');
+
+  // Step 1: get all page titles (namespace 0)
+  let allTitles = [];
+  let apContinue = null;
+  do {
+    const params = new URLSearchParams({
+      action: 'query',
+      list: 'allpages',
+      apnamespace: '0',
+      aplimit: '500',
+      format: 'json',
+      origin: '*',
+    });
+    if (apContinue) params.set('apcontinue', apContinue);
+    const res = await fetch(`${API}?${params}`);
+    const data = await res.json();
+    const pages = data.query?.allpages || [];
+    allTitles.push(...pages.map(p => p.title));
+    apContinue = data.continue?.apcontinue ?? null;
+    setProgress(10 + (allTitles.length / 1000) * 20);
+  } while (apContinue);
+
+  setStatus(`${allTitles.length} articles found. fetching links…`);
+  const titleSet = new Set(allTitles);
+  allTitles.forEach(t => { pageLinks[t] = []; });
+
+  // Step 2: fetch links in batches of 50 pages
+  const BATCH = 50;
+  for (let i = 0; i < allTitles.length; i += BATCH) {
+    const chunk = allTitles.slice(i, i + BATCH);
+    let plContinue = null;
+    // Temporary accumulator for this chunk
+    const chunkLinks = {};
+    chunk.forEach(t => { chunkLinks[t] = []; });
+
+    do {
+      const params = new URLSearchParams({
+        action: 'query',
+        titles: chunk.join('|'),
+        prop: 'links',
+        pllimit: '500',
+        plnamespace: '0',
+        format: 'json',
+        origin: '*',
+      });
+      if (plContinue) params.set('plcontinue', plContinue);
+      const res = await fetch(`${API}?${params}`);
+      const data = await res.json();
+      const pages = Object.values(data.query?.pages || {});
+      for (const page of pages) {
+        if (page.title && page.links) {
+          (chunkLinks[page.title] = chunkLinks[page.title] || [])
+            .push(...page.links.map(l => l.title).filter(t => titleSet.has(t)));
+        }
+      }
+      plContinue = data.continue?.plcontinue ?? null;
+    } while (plContinue);
+
+    // Merge into main
+    for (const [t, links] of Object.entries(chunkLinks)) {
+      pageLinks[t] = [...new Set(links)]; // deduplicate
+    }
+
+    batchCount++;
+    const pct = 30 + ((i + BATCH) / allTitles.length) * 65;
+    setProgress(Math.min(pct, 95));
+    setStatus(`fetching links… ${Math.min(i + BATCH, allTitles.length)} / ${allTitles.length}`);
+  }
+
+  setProgress(100);
+  setStatus('building graph…');
+  return pageLinks;
+}
+
+// ── Build D3 graph ─────────────────────────────────────────────────────────
+async function main() {
+  const pageLinks = await fetchGraph();
+
+  const titles = Object.keys(pageLinks);
+
+  // Build node index
+  const nodeIndex = new Map();
+  titles.forEach((t, i) => nodeIndex.set(t, i));
+
+  // Build edges (deduplicated, only internal links)
+  const edgeSet = new Set();
+  const edges = [];
+  for (const [src, targets] of Object.entries(pageLinks)) {
+    const si = nodeIndex.get(src);
+    for (const tgt of targets) {
+      const ti = nodeIndex.get(tgt);
+      if (ti === undefined || si === undefined) continue;
+      const key = `${Math.min(si, ti)}-${Math.max(si, ti)}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        edges.push({ source: si, target: ti });
+      }
+    }
+  }
+
+  // Compute in-degree
+  const inDegree = new Array(titles.length).fill(0);
+  const outDegree = new Array(titles.length).fill(0);
+  for (const e of edges) {
+    inDegree[e.target]++;
+    outDegree[e.source]++;
+  }
+
+  const nodes = titles.map((title, i) => ({
+    id: i,
+    title,
+    inDeg: inDegree[i],
+    outDeg: outDegree[i],
+  }));
+
+  // Update stats
+  document.getElementById('stat-nodes').textContent = nodes.length.toLocaleString();
+  document.getElementById('stat-edges').textContent = edges.length.toLocaleString();
+  const topNode = nodes.reduce((a, b) => (a.inDeg > b.inDeg ? a : b), nodes[0]);
+  document.getElementById('stat-top').textContent = topNode?.title ?? '—';
+
+  // ── D3 force simulation ────────────────────────────────────────────────
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+
+  const svg = d3.select('#graph')
+    .attr('width', width)
+    .attr('height', height);
+
+  const g = svg.append('g');
+
+  // Colour scale by in-degree
+  const maxIn = d3.max(nodes, d => d.inDeg) || 1;
+  const colorScale = d3.scaleSequential()
+    .domain([0, maxIn])
+    .interpolator(d3.interpolateRgb('#2a2a6a', '#cc55ff'));
+
+  // Radius scale
+  const rScale = d3.scaleSqrt()
+    .domain([0, maxIn])
+    .range([2.5, 14]);
+
+  // Simulation
+  const sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(edges).id(d => d.id).distance(120).strength(0.3))
+    .force('charge', d3.forceManyBody().strength(-300).distanceMax(600))
+    .force('center', d3.forceCenter(width / 2, height / 2).strength(0.05))
+    .force('collide', d3.forceCollide(d => rScale(d.inDeg) + 12))
+    .alphaDecay(0.015)
+    .velocityDecay(0.5);
+
+  // Draw edges
+  const linkSel = g.append('g')
+    .selectAll('line')
+    .data(edges)
+    .join('line')
+    .attr('class', 'link');
+
+  // Draw nodes
+  const nodeSel = g.append('g')
+    .selectAll('g')
+    .data(nodes)
+    .join('g')
+    .attr('class', 'node')
+    .call(d3.drag()
+      .on('start', (event, d) => {
+        if (!event.active) sim.alphaTarget(0.3).restart();
+        d.fx = d.x; d.fy = d.y;
+      })
+      .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+      .on('end', (event, d) => {
+        if (!event.active) sim.alphaTarget(0);
+        d.fx = null; d.fy = null;
+      })
+    );
+
+  nodeSel.append('circle')
+    .attr('r', d => rScale(d.inDeg))
+    .attr('fill', d => colorScale(d.inDeg))
+    .attr('fill-opacity', 0.85)
+    .attr('stroke', d => d3.color(colorScale(d.inDeg))?.brighter(1) ?? '#fff')
+    .attr('stroke-width', 0.5)
+    .attr('stroke-opacity', 0.4);
+
+  // Labels for prominent nodes (top 80 by in-degree)
+  const labelThreshold = nodes
+    .map(d => d.inDeg)
+    .sort((a, b) => b - a)[Math.min(79, nodes.length - 1)] ?? 0;
+
+  nodeSel.append('text')
+    .attr('class', d => d.inDeg >= labelThreshold ? 'node-label prominent' : 'node-label')
+    .attr('dx', d => rScale(d.inDeg) + 3)
+    .attr('dy', 0)
+    .text(d => d.inDeg >= labelThreshold ? d.title : '')
+    .style('display', d => d.inDeg >= labelThreshold ? null : 'none');
+
+  // Tick
+  sim.on('tick', () => {
+    linkSel
+      .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+
+  // ── Zoom & pan ─────────────────────────────────────────────────────────
+  const zoom = d3.zoom()
+    .scaleExtent([0.1, 8])
+    .on('zoom', (event) => {
+      g.attr('transform', event.transform);
+      // Show more labels when zoomed in
+      const k = event.transform.k;
+      nodeSel.selectAll('text.node-label')
+        .style('display', d => {
+          if (d.inDeg >= labelThreshold) return null;
+          if (k > 2 && d.inDeg >= 2) return null;
+          if (k > 4) return null;
+          return 'none';
+        });
+    });
+
+  svg.call(zoom);
+
+  const resetView = () => {
+    svg.transition().duration(600).call(
+      zoom.transform,
+      d3.zoomIdentity.translate(width / 2, height / 2).scale(0.85).translate(-width / 2, -height / 2)
+    );
+  };
+
+  document.getElementById('btn-zoom-in').onclick = () =>
+    svg.transition().duration(300).call(zoom.scaleBy, 1.5);
+  document.getElementById('btn-zoom-out').onclick = () =>
+    svg.transition().duration(300).call(zoom.scaleBy, 0.67);
+  document.getElementById('btn-reset').onclick = resetView;
+
+  // ── Tooltip ─────────────────────────────────────────────────────────────
+  const tooltip = document.getElementById('tooltip');
+  nodeSel
+    .on('mousemove', (event, d) => {
+      document.getElementById('tt-title').textContent = d.title;
+      document.getElementById('tt-in').textContent = d.inDeg;
+      document.getElementById('tt-out').textContent = d.outDeg;
+      const x = event.clientX + 14;
+      const y = event.clientY - 10;
+      tooltip.style.left = Math.min(x, window.innerWidth - 200) + 'px';
+      tooltip.style.top = y + 'px';
+      tooltip.classList.add('visible');
+    })
+    .on('mouseleave', () => tooltip.classList.remove('visible'))
+    .on('click', (event, d) => {
+      window.open(WIKI_BASE + encodeURIComponent(d.title.replace(/ /g, '_')), '_blank');
+    });
+
+  // ── Search / highlight ───────────────────────────────────────────────────
+  const buildAdjacency = () => {
+    const adj = new Map();
+    for (const e of edges) {
+      const si = typeof e.source === 'object' ? e.source.id : e.source;
+      const ti = typeof e.target === 'object' ? e.target.id : e.target;
+      if (!adj.has(si)) adj.set(si, new Set());
+      if (!adj.has(ti)) adj.set(ti, new Set());
+      adj.get(si).add(ti);
+      adj.get(ti).add(si);
+    }
+    return adj;
+  };
+
+  let adj = null;
+  let searchDebounce = null;
+
+  document.getElementById('search').addEventListener('input', (e) => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      const q = e.target.value.trim().toLowerCase();
+      const countEl = document.getElementById('search-count');
+
+      if (!q) {
+        nodeSel.classed('dimmed', false).classed('focused', false);
+        linkSel.classed('dimmed', false).classed('highlighted', false);
+        countEl.textContent = '';
+        return;
+      }
+
+      if (!adj) adj = buildAdjacency();
+
+      const matches = nodes.filter(d => d.title.toLowerCase().includes(q));
+      const matchIds = new Set(matches.map(d => d.id));
+      countEl.textContent = `${matches.length} match${matches.length !== 1 ? 'es' : ''}`;
+
+      // Expand to include 1-hop neighbors
+      const visible = new Set(matchIds);
+      for (const id of matchIds) {
+        (adj.get(id) || new Set()).forEach(n => visible.add(n));
+      }
+
+      nodeSel
+        .classed('dimmed', d => !visible.has(d.id))
+        .classed('focused', d => matchIds.has(d.id));
+
+      linkSel.classed('dimmed', d => {
+        const si = typeof d.source === 'object' ? d.source.id : d.source;
+        const ti = typeof d.target === 'object' ? d.target.id : d.target;
+        return !matchIds.has(si) && !matchIds.has(ti);
+      });
+      linkSel.classed('highlighted', d => {
+        const si = typeof d.source === 'object' ? d.source.id : d.source;
+        const ti = typeof d.target === 'object' ? d.target.id : d.target;
+        return matchIds.has(si) || matchIds.has(ti);
+      });
+
+      // Pan to first match
+      if (matches.length > 0 && matches[0].x != null) {
+        const t = d3.zoomTransform(svg.node());
+        const scale = Math.max(t.k, 1.5);
+        svg.transition().duration(600).call(
+          zoom.transform,
+          d3.zoomIdentity
+            .translate(width / 2, height / 2)
+            .scale(scale)
+            .translate(-matches[0].x, -matches[0].y)
+        );
+      }
+    }, 250);
+  });
+
+  // ── Fade out loader ──────────────────────────────────────────────────────
+  setTimeout(() => {
+    const loader = document.getElementById('loader');
+    loader.classList.add('fade-out');
+    setTimeout(() => { loader.style.display = 'none'; }, 700);
+  }, 400);
+}
+
+main().catch(err => {
+  console.error(err);
+  document.getElementById('loader-status').textContent = 'error: ' + err.message;
+});
+</script>
+</body>
+</html>
