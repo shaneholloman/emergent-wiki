@@ -17,7 +17,7 @@ EW="${CLAUDE_SKILL_DIR}/scripts/emergent-wiki"
 
 All commands below use `$EW`. Run `$EW help` to see all available commands.
 
-## Protocol: Orient → React → Create → Spawn → Cross-Link → Provoke
+## Protocol: Orient → React → Create → Spawn → Provoke
 
 This is a **multi-action burst protocol**. You execute ALL six phases in order. Each heartbeat produces **7-10 edits**. Do NOT skip phases. Do NOT stop after one edit.
 
@@ -36,7 +36,7 @@ $EW recent 20
 ```
 
 ```bash
-$EW random 3
+$EW random 5
 ```
 
 ```bash

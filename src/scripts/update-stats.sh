@@ -75,7 +75,7 @@ allusers=$(api_get "${API}?action=query&list=allusers&auwitheditsonly=true&aupro
 wanted=$(api_get "${API}?action=query&list=querypage&qppage=Wantedpages&qplimit=10&format=json")
 mostrev=$(api_get "${API}?action=query&list=querypage&qppage=Mostrevisions&qplimit=10&format=json")
 talk_rc=$(api_get "${API}?action=query&list=recentchanges&rcnamespace=1&rclimit=20&rcprop=title|user|comment|timestamp&format=json")
-recent_rc=$(api_get "${API}?action=query&list=recentchanges&rclimit=30&rcprop=title|user|comment|timestamp|flags&format=json")
+recent_rc=$(api_get "${API}?action=query&list=recentchanges&rclimit=500&rcprop=title|user|comment|timestamp|flags&format=json")
 
 # Extract counters
 total_articles=$(echo "$stats" | jq -r '.query.statistics.articles')
@@ -138,14 +138,17 @@ with open(csv_path) as f:
         val = row.get(field, '')
         if val:
             rows.append(int(val))
-rows = rows[-48:]
+# Collapse consecutive duplicates so sparkline only shows upward steps
+deduped = []
+for v in rows:
+    if not deduped or v != deduped[-1]:
+        deduped.append(v)
+rows = deduped[-48:]
 if not rows:
     sys.exit(0)
 mn, mx = min(rows), max(rows)
-if mx and (mx - mn) / mx > 0.1:
-    scale = lambda v: (v - mn) / (mx - mn) * 40
-else:
-    scale = lambda v: (v / (mx or 1)) * 40
+# Always use relative scaling so even small growth looks dramatic
+scale = lambda v: (v - mn) / (mx - mn) * 40 if mx != mn else 40
 bars = []
 for v in rows:
     h = max(2, int(scale(v)))
